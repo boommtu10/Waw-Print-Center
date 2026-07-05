@@ -477,7 +477,8 @@ async function loadSummary() {
 function renderSummary(data) {
   els.summaryIncomeTotal.textContent = formatBaht(data.incomeTotal);
   els.summaryExpenseTotal.textContent = formatBaht(data.expenseTotal);
-  // (กำไรสุทธิ ไม่แสดง)
+  els.summaryProfitTotal.textContent = formatBaht(data.profit);
+  els.summaryProfitCard.classList.toggle('is-loss', data.profit < 0);
 
   const incomeEntries = Object.entries(data.incomeByItem || {});
   els.summaryIncomeByItem.innerHTML = incomeEntries.length
