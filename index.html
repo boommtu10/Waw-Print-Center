@@ -118,6 +118,7 @@
       <div class="filter-tabs" id="summaryFilterTabs">
         <button class="filter-tab is-active" data-range="day" type="button">รายวัน</button>
         <button class="filter-tab" data-range="month" type="button">รายเดือน</button>
+        <button class="filter-tab" data-range="year" type="button">รายปี</button>
         <button class="filter-tab" data-range="custom" type="button">ช่วงวันที่</button>
       </div>
 
@@ -132,6 +133,13 @@
         <label class="filter-label">
           เดือน
           <input type="month" id="filterMonth" class="filter-input">
+        </label>
+      </div>
+
+      <div class="filter-inputs is-hidden" id="filterInputsYear">
+        <label class="filter-label">
+          ปี (ค.ศ.)
+          <input type="number" id="filterYear" class="filter-input" inputmode="numeric" step="1">
         </label>
       </div>
 

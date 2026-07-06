@@ -58,9 +58,11 @@ const els = {
   summaryFilterTabs: $('summaryFilterTabs'),
   filterInputsDay: $('filterInputsDay'),
   filterInputsMonth: $('filterInputsMonth'),
+  filterInputsYear: $('filterInputsYear'),
   filterInputsCustom: $('filterInputsCustom'),
   filterDaySingle: $('filterDaySingle'),
   filterMonth: $('filterMonth'),
+  filterYear: $('filterYear'),
   filterFrom: $('filterFrom'),
   filterTo: $('filterTo'),
   applyFilterBtn: $('applyFilterBtn'),
@@ -417,6 +419,7 @@ els.summaryFilterTabs.addEventListener('click', (e) => {
   document.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('is-active', t === tab));
   els.filterInputsDay.classList.toggle('is-hidden', state.summaryRange !== 'day');
   els.filterInputsMonth.classList.toggle('is-hidden', state.summaryRange !== 'month');
+  els.filterInputsYear.classList.toggle('is-hidden', state.summaryRange !== 'year');
   els.filterInputsCustom.classList.toggle('is-hidden', state.summaryRange !== 'custom');
 });
 
@@ -436,6 +439,10 @@ function getDateRangeForSummary() {
     }
     return monthToRange_(m);
   }
+  if (state.summaryRange === 'year') {
+    const y = els.filterYear.value || String(new Date().getFullYear());
+    return yearToRange_(y);
+  }
   // custom
   const from = els.filterFrom.value || todayStr;
   const to = els.filterTo.value || todayStr;
@@ -447,6 +454,13 @@ function monthToRange_(ym) {
   const from = `${y}-${String(m).padStart(2, '0')}-01`;
   const lastDay = new Date(y, m, 0).getDate();
   const to = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { from, to };
+}
+
+function yearToRange_(y) {
+  const yNum = Number(y);
+  const from = `${yNum}-01-01`;
+  const to = `${yNum}-12-31`;
   return { from, to };
 }
 
@@ -615,6 +629,7 @@ async function loadAllData() {
     els.filterDaySingle.value = todayStr;
     const now = new Date();
     els.filterMonth.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    els.filterYear.value = now.getFullYear();
     els.filterFrom.value = todayStr;
     els.filterTo.value = todayStr;
 
