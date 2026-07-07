@@ -20,6 +20,9 @@
   --color-income: #2F7D5C;
   --color-income-soft: #DCEEE4;
   --color-danger: #C04040;
+  --color-transfer: #6B4FA0;
+  --color-transfer-soft: #EAE3F3;
+  --color-transfer-deep: #4A3570;
 
   /* --- Type --- */
   --font-display: 'Noto Sans Thai', sans-serif;
@@ -234,6 +237,10 @@ body::before {
   background: linear-gradient(90deg, var(--color-expense), var(--color-ink-soft));
 }
 
+.receipt-card--transfer::before {
+  background: linear-gradient(90deg, var(--color-transfer), var(--color-ink-soft));
+}
+
 .receipt-head { margin-bottom: 18px; }
 
 .receipt-head h1 {
@@ -266,6 +273,24 @@ body::before {
 
 .entry-row.entry-row--expense {
   grid-template-columns: 1fr 84px 30px;
+}
+
+.entry-row.entry-row--transfer {
+  grid-template-columns: 1fr 50px 62px 78px 30px;
+}
+
+.entry-static-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-paper);
+  border: 1.5px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 9px 4px;
 }
 
 @keyframes row-in {
@@ -341,6 +366,11 @@ body::before {
   grid-template-columns: 1fr 84px 30px;
 }
 
+.entry-col-labels.entry-col-labels--transfer {
+  grid-template-columns: 1fr 50px 62px 78px 30px;
+  margin-bottom: 4px;
+}
+
 .add-row-btn {
   margin-top: 14px;
   width: 100%;
@@ -391,6 +421,23 @@ body::before {
   color: var(--color-expense);
 }
 
+.receipt-total-row--transfer .receipt-total-amount {
+  color: var(--color-transfer);
+}
+
+.receipt-total-row--transfer-sub {
+  padding: 2px 2px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.receipt-total-amount--sub {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
 .save-btn {
   width: 100%;
   border: none;
@@ -417,6 +464,11 @@ body::before {
 .save-btn--expense {
   background: linear-gradient(135deg, var(--color-expense), #8a3e22);
   box-shadow: 0 6px 16px rgba(176, 83, 47, 0.28);
+}
+
+.save-btn--transfer {
+  background: linear-gradient(135deg, var(--color-transfer), var(--color-transfer-deep));
+  box-shadow: 0 6px 16px rgba(107, 79, 160, 0.28);
 }
 
 .save-btn[disabled] {
@@ -569,6 +621,18 @@ body::before {
 .summary-card--expense .summary-card-value { color: var(--color-expense); }
 .summary-card--profit .summary-card-value { color: var(--color-gold); font-size: 26px; }
 .summary-card--profit.is-loss .summary-card-value { color: #E08585; }
+
+.summary-card--transfer-amount { background: var(--color-transfer-soft); }
+.summary-card--transfer-fee { background: var(--color-income-soft); }
+.summary-card--transfer-cash {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, var(--color-transfer), var(--color-transfer-deep));
+}
+
+.summary-card--transfer-amount .summary-card-value { color: var(--color-transfer); }
+.summary-card--transfer-fee .summary-card-value { color: var(--color-income); }
+.summary-card--transfer-cash .summary-card-label { color: rgba(255,255,255,0.7); }
+.summary-card--transfer-cash .summary-card-value { color: #fff; font-size: 24px; }
 
 .summary-detail-card {
   background: var(--color-paper-card);

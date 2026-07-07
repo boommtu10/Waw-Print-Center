@@ -10,8 +10,11 @@ const state = {
   expenseItems: [],
   incomeRows: [],   // [{rowId, name, qty, unit, price}]
   expenseRows: [],  // [{rowId, name, price}]
+  transferRows: [], // [{rowId, amount, qty, fee}]
   summaryRange: 'day',
   lastSummary: null,
+  transferSummaryRange: 'day',
+  lastTransferSummary: null,
   deviceName: getOrCreateDeviceName_(),
 };
 
@@ -54,6 +57,29 @@ const els = {
   expenseTotal: $('expenseTotal'),
   saveExpenseBtn: $('saveExpenseBtn'),
   manageExpenseItemsBtn: $('manageExpenseItemsBtn'),
+
+  transferEntryList: $('transferEntryList'),
+  addTransferRowBtn: $('addTransferRowBtn'),
+  transferAmountEntryTotal: $('transferAmountEntryTotal'),
+  transferFeeEntryTotal: $('transferFeeEntryTotal'),
+  transferCashEntryTotal: $('transferCashEntryTotal'),
+  saveTransferBtn: $('saveTransferBtn'),
+
+  transferFilterTabs: $('transferFilterTabs'),
+  transferFilterInputsDay: $('transferFilterInputsDay'),
+  transferFilterInputsMonth: $('transferFilterInputsMonth'),
+  transferFilterInputsYear: $('transferFilterInputsYear'),
+  transferFilterInputsCustom: $('transferFilterInputsCustom'),
+  transferFilterDaySingle: $('transferFilterDaySingle'),
+  transferFilterMonth: $('transferFilterMonth'),
+  transferFilterYear: $('transferFilterYear'),
+  transferFilterFrom: $('transferFilterFrom'),
+  transferFilterTo: $('transferFilterTo'),
+  transferApplyFilterBtn: $('transferApplyFilterBtn'),
+  transferAmountSummaryTotal: $('transferAmountSummaryTotal'),
+  transferFeeSummaryTotal: $('transferFeeSummaryTotal'),
+  transferCashSummaryTotal: $('transferCashSummaryTotal'),
+  transferDetailList: $('transferDetailList'),
 
   summaryFilterTabs: $('summaryFilterTabs'),
   filterInputsDay: $('filterInputsDay'),
@@ -293,6 +319,66 @@ els.expenseEntryList.addEventListener('click', (e) => {
 
 els.addExpenseRowBtn.addEventListener('click', () => addExpenseRow());
 
+// ===================== ENTRY ROWS: บริการโอนเงิน =====================
+function addTransferRow(prefill) {
+  const row = {
+    rowId: nextRowId_(),
+    amount: (prefill && prefill.amount) || '',
+    qty: (prefill && prefill.qty) || 1,
+    fee: (prefill && prefill.fee) || '',
+  };
+  state.transferRows.push(row);
+  renderTransferRows();
+}
+
+function removeTransferRow(rowId) {
+  state.transferRows = state.transferRows.filter(r => r.rowId !== rowId);
+  if (state.transferRows.length === 0) addTransferRow();
+  else renderTransferRows();
+}
+
+function renderTransferRows() {
+  const rowsHtml = state.transferRows.map(row => `
+    <div class="entry-row entry-row--transfer" data-row-id="${row.rowId}">
+      <input class="entry-input entry-input--number" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" data-field="amount" data-row-id="${row.rowId}" value="${row.amount}">
+      <input class="entry-input entry-input--number" type="number" inputmode="numeric" min="0" placeholder="0" data-field="qty" data-row-id="${row.rowId}" value="${row.qty}">
+      <span class="entry-static-label">รายการ</span>
+      <input class="entry-input entry-input--number" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" data-field="fee" data-row-id="${row.rowId}" value="${row.fee}">
+      <button class="entry-row-remove" type="button" data-remove-row="${row.rowId}" aria-label="ลบแถวนี้">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </button>
+    </div>
+  `).join('');
+
+  els.transferEntryList.innerHTML = rowsHtml;
+  updateTransferEntryTotals();
+}
+
+function updateTransferEntryTotals() {
+  const amountTotal = state.transferRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const feeTotal = state.transferRows.reduce((sum, r) => sum + (Number(r.fee) || 0), 0);
+  els.transferAmountEntryTotal.textContent = formatBaht(amountTotal);
+  els.transferFeeEntryTotal.textContent = formatBaht(feeTotal);
+  els.transferCashEntryTotal.textContent = formatBaht(amountTotal + feeTotal);
+}
+
+els.transferEntryList.addEventListener('input', (e) => {
+  const field = e.target.dataset.field;
+  const rowId = e.target.dataset.rowId;
+  if (!field || !rowId) return;
+  const row = state.transferRows.find(r => r.rowId === rowId);
+  if (!row) return;
+  row[field] = e.target.value;
+  if (field === 'amount' || field === 'fee') updateTransferEntryTotals();
+});
+
+els.transferEntryList.addEventListener('click', (e) => {
+  const removeBtn = e.target.closest('[data-remove-row]');
+  if (removeBtn) removeTransferRow(removeBtn.dataset.removeRow);
+});
+
+els.addTransferRowBtn.addEventListener('click', () => addTransferRow());
+
 // ===================== SAVE: รายรับ =====================
 els.saveIncomeBtn.addEventListener('click', async () => {
   if (!isConfigured()) return showToast('ยังไม่ได้ตั้งค่า API_URL ใน config.js', 'error');
@@ -347,6 +433,39 @@ els.saveExpenseBtn.addEventListener('click', async () => {
     setSyncStatus('error', 'ซิงค์ล้มเหลว');
   } finally {
     els.saveExpenseBtn.disabled = false;
+    setLoading(false);
+  }
+});
+
+// ===================== SAVE: บริการโอนเงิน =====================
+els.saveTransferBtn.addEventListener('click', async () => {
+  if (!isConfigured()) return showToast('ยังไม่ได้ตั้งค่า API_URL ใน config.js', 'error');
+
+  const validRows = state.transferRows.filter(r => Number(r.amount) > 0);
+  if (validRows.length === 0) {
+    showToast('กรุณากรอกยอดโอนอย่างน้อย 1 รายการ', 'error');
+    return;
+  }
+
+  els.saveTransferBtn.disabled = true;
+  setLoading(true);
+  try {
+    const items = validRows.map(r => ({
+      amount: Number(r.amount),
+      qty: Number(r.qty) || 1,
+      fee: Number(r.fee) || 0,
+    }));
+    await apiPost({ action: 'addEntry', type: 'transfer', items, device: state.deviceName });
+    showToast('บันทึกรายการโอนเงินเรียบร้อย', 'success');
+    state.transferRows = [];
+    addTransferRow();
+    setSyncStatus('synced', 'ซิงค์ล่าสุดเมื่อสักครู่');
+    loadTransferSummary();
+  } catch (err) {
+    showToast('บันทึกไม่สำเร็จ: ' + err.message, 'error');
+    setSyncStatus('error', 'ซิงค์ล้มเหลว');
+  } finally {
+    els.saveTransferBtn.disabled = false;
     setLoading(false);
   }
 });
@@ -513,6 +632,76 @@ function renderSummary(data) {
     : '<p class="empty-hint">ยังไม่มีข้อมูลในช่วงที่เลือก</p>';
 }
 
+// ===================== สรุปยอด: บริการโอนเงิน (แยกจากหน้าสรุปหลัก ไม่รวมยอดกัน) =====================
+els.transferFilterTabs.addEventListener('click', (e) => {
+  const tab = e.target.closest('.filter-tab');
+  if (!tab) return;
+  state.transferSummaryRange = tab.dataset.range;
+  els.transferFilterTabs.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('is-active', t === tab));
+  els.transferFilterInputsDay.classList.toggle('is-hidden', state.transferSummaryRange !== 'day');
+  els.transferFilterInputsMonth.classList.toggle('is-hidden', state.transferSummaryRange !== 'month');
+  els.transferFilterInputsYear.classList.toggle('is-hidden', state.transferSummaryRange !== 'year');
+  els.transferFilterInputsCustom.classList.toggle('is-hidden', state.transferSummaryRange !== 'custom');
+});
+
+function getDateRangeForTransferSummary() {
+  const todayStr = formatDateLocal_(new Date());
+
+  if (state.transferSummaryRange === 'day') {
+    const d = els.transferFilterDaySingle.value || todayStr;
+    return { from: d, to: d };
+  }
+  if (state.transferSummaryRange === 'month') {
+    const m = els.transferFilterMonth.value; // yyyy-mm
+    if (!m) {
+      const now = new Date();
+      const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      return monthToRange_(ym);
+    }
+    return monthToRange_(m);
+  }
+  if (state.transferSummaryRange === 'year') {
+    const y = els.transferFilterYear.value || String(new Date().getFullYear());
+    return yearToRange_(y);
+  }
+  const from = els.transferFilterFrom.value || todayStr;
+  const to = els.transferFilterTo.value || todayStr;
+  return { from, to };
+}
+
+els.transferApplyFilterBtn.addEventListener('click', () => loadTransferSummary());
+
+async function loadTransferSummary() {
+  if (!isConfigured()) return;
+
+  const { from, to } = getDateRangeForTransferSummary();
+  setLoading(true);
+  try {
+    const data = await apiGet({ action: 'getTransferSummary', from, to });
+    state.lastTransferSummary = data;
+    renderTransferSummary(data);
+  } catch (err) {
+    showToast('โหลดสรุปโอนเงินไม่สำเร็จ: ' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function renderTransferSummary(data) {
+  els.transferAmountSummaryTotal.textContent = formatBaht(data.amountTotal);
+  els.transferFeeSummaryTotal.textContent = formatBaht(data.feeTotal);
+  els.transferCashSummaryTotal.textContent = formatBaht(data.cashTotal);
+
+  const entries = data.entries || [];
+  els.transferDetailList.innerHTML = entries.length
+    ? entries.map(e => `
+        <div class="summary-detail-row">
+          <span class="summary-detail-name">${escapeHtml(e.date)} ${escapeHtml(e.time)}<span class="summary-detail-qty">(${e.qty} รายการ)</span></span>
+          <span class="summary-detail-amount">ยอด ${formatBaht(e.amount)} · ค่าบริการ ${formatBaht(e.fee)}</span>
+        </div>`).join('')
+    : '<p class="empty-hint">ยังไม่มีข้อมูลในช่วงที่เลือก</p>';
+}
+
 // ===================== EXPORT EXCEL =====================
 els.exportExcelBtn.addEventListener('click', () => {
   if (!state.lastSummary) {
@@ -624,6 +813,9 @@ async function loadAllData() {
     if (state.expenseRows.length === 0) addExpenseRow();
     else renderExpenseRows();
 
+    if (state.transferRows.length === 0) addTransferRow();
+    else renderTransferRows();
+
     // ตั้งวันที่เริ่มต้นของหน้าสรุปเป็นวันนี้
     const todayStr = formatDateLocal_(new Date());
     els.filterDaySingle.value = todayStr;
@@ -633,7 +825,15 @@ async function loadAllData() {
     els.filterFrom.value = todayStr;
     els.filterTo.value = todayStr;
 
+    // ตั้งวันที่เริ่มต้นของสรุปหน้าโอนเงิน (แยกต่างหาก)
+    els.transferFilterDaySingle.value = todayStr;
+    els.transferFilterMonth.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    els.transferFilterYear.value = now.getFullYear();
+    els.transferFilterFrom.value = todayStr;
+    els.transferFilterTo.value = todayStr;
+
     await loadSummary();
+    await loadTransferSummary();
 
     setSyncStatus('synced', 'ซิงค์ข้อมูลล่าสุดแล้ว');
   } catch (err) {

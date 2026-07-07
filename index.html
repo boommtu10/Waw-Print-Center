@@ -112,6 +112,114 @@
     </div>
   </section>
 
+  <!-- ---------- หน้าบริการโอนเงิน ---------- -->
+  <section class="page is-hidden" id="page-transfer" data-page="transfer">
+    <div class="receipt-card receipt-card--transfer">
+      <div class="receipt-head">
+        <h1>บริการโอนเงิน</h1>
+        <p class="receipt-head-sub">บันทึกรายการโอนเงินแต่ละครั้ง</p>
+      </div>
+
+      <div class="entry-col-labels entry-col-labels--transfer">
+        <span>ยอดโอน</span><span>จำนวน</span><span>หน่วย</span><span>ค่าบริการ</span><span></span>
+      </div>
+      <div class="entry-list" id="transferEntryList"></div>
+
+      <button class="add-row-btn" id="addTransferRowBtn" type="button">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 13H13v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        เพิ่มแถวรายการ
+      </button>
+
+      <div class="receipt-divider"></div>
+
+      <div class="receipt-total-row receipt-total-row--transfer-sub">
+        <span>ยอดโอนรวม</span>
+        <span class="receipt-total-amount receipt-total-amount--sub" id="transferAmountEntryTotal">฿0.00</span>
+      </div>
+      <div class="receipt-total-row receipt-total-row--transfer-sub">
+        <span>ค่าบริการรวม</span>
+        <span class="receipt-total-amount receipt-total-amount--sub" id="transferFeeEntryTotal">฿0.00</span>
+      </div>
+      <div class="receipt-total-row receipt-total-row--transfer">
+        <span>รวมเงินสดที่ต้องรับ</span>
+        <span class="receipt-total-amount" id="transferCashEntryTotal">฿0.00</span>
+      </div>
+
+      <button class="save-btn save-btn--transfer" id="saveTransferBtn" type="button">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+        บันทึกรายการ
+      </button>
+    </div>
+
+    <!-- สรุปยอดของหน้าโอนเงินเอง แยกต่างหากจากหน้าสรุปหลัก ไม่รวมยอดกัน -->
+    <div class="summary-filter-card">
+      <div class="filter-tabs" id="transferFilterTabs">
+        <button class="filter-tab is-active" data-range="day" type="button">รายวัน</button>
+        <button class="filter-tab" data-range="month" type="button">รายเดือน</button>
+        <button class="filter-tab" data-range="year" type="button">รายปี</button>
+        <button class="filter-tab" data-range="custom" type="button">ช่วงวันที่</button>
+      </div>
+
+      <div class="filter-inputs" id="transferFilterInputsDay">
+        <label class="filter-label">
+          วันที่
+          <input type="date" id="transferFilterDaySingle" class="filter-input">
+        </label>
+      </div>
+
+      <div class="filter-inputs is-hidden" id="transferFilterInputsMonth">
+        <label class="filter-label">
+          เดือน
+          <input type="month" id="transferFilterMonth" class="filter-input">
+        </label>
+      </div>
+
+      <div class="filter-inputs is-hidden" id="transferFilterInputsYear">
+        <label class="filter-label">
+          ปี (ค.ศ.)
+          <input type="number" id="transferFilterYear" class="filter-input" inputmode="numeric" step="1">
+        </label>
+      </div>
+
+      <div class="filter-inputs is-hidden" id="transferFilterInputsCustom">
+        <label class="filter-label">
+          จากวันที่
+          <input type="date" id="transferFilterFrom" class="filter-input">
+        </label>
+        <label class="filter-label">
+          ถึงวันที่
+          <input type="date" id="transferFilterTo" class="filter-input">
+        </label>
+      </div>
+
+      <button class="apply-filter-btn" id="transferApplyFilterBtn" type="button">แสดงสรุป</button>
+    </div>
+
+    <div class="summary-cards" id="transferSummaryCards">
+      <div class="summary-card summary-card--transfer-amount">
+        <span class="summary-card-label">ยอดโอนรวม</span>
+        <span class="summary-card-value" id="transferAmountSummaryTotal">฿0.00</span>
+      </div>
+      <div class="summary-card summary-card--transfer-fee">
+        <span class="summary-card-label">ค่าบริการรวม</span>
+        <span class="summary-card-value" id="transferFeeSummaryTotal">฿0.00</span>
+      </div>
+      <div class="summary-card summary-card--transfer-cash">
+        <span class="summary-card-label">รวมเงินสดที่ต้องรับ</span>
+        <span class="summary-card-value" id="transferCashSummaryTotal">฿0.00</span>
+      </div>
+    </div>
+
+    <div class="summary-detail-card">
+      <div class="summary-detail-head">
+        <h2>รายการโอนเงินในช่วงที่เลือก</h2>
+      </div>
+      <div class="summary-detail-list" id="transferDetailList">
+        <p class="empty-hint">ยังไม่มีข้อมูลในช่วงที่เลือก</p>
+      </div>
+    </div>
+  </section>
+
   <!-- ---------- หน้าสรุป ---------- -->
   <section class="page is-hidden" id="page-summary" data-page="summary">
     <div class="summary-filter-card">
@@ -207,6 +315,10 @@
   <button class="nav-btn" data-page="expense" type="button">
     <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
     <span>รายจ่าย</span>
+  </button>
+  <button class="nav-btn" data-page="transfer" type="button">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M9.01 14H2v2h7.01v3L13 15l-3.99-4v3zm5.98-6v-3L11 9l3.99 4v-3H22V8h-6.01z"/></svg>
+    <span>โอนเงิน</span>
   </button>
   <button class="nav-btn" data-page="summary" type="button">
     <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M3 3h2v18H3V3zm4 10h2v8H7v-8zm4-6h2v14h-2V7zm4 3h2v11h-2V10zm4-7h2v18h-2V3z"/></svg>
