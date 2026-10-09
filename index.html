@@ -15,11 +15,18 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
 
+<!-- เปิดการเชื่อมต่อ API ล่วงหน้า (ประหยัดเวลา DNS/TLS ตอนเรียกครั้งแรก) -->
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- ฟอนต์โหลดแบบไม่บล็อกการแสดงผล: ถ้า Google Fonts ช้า/เข้าไม่ได้ หน้าแอปยังขึ้นด้วยฟอนต์สำรองทันที -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"></noscript>
 
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="print.css">
+<style id="slipPageStyle"></style>
 </head>
 <body>
 
@@ -218,6 +225,11 @@
         <p class="empty-hint">ยังไม่มีข้อมูลในช่วงที่เลือก</p>
       </div>
     </div>
+
+    <button class="export-btn print-btn" id="printTransferBtn" type="button">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
+      พิมพ์สลิปสรุปโอนเงิน
+    </button>
   </section>
 
   <!-- ---------- หน้าสรุป ---------- -->
@@ -302,6 +314,11 @@
       <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16h-2.5l-1.5-2.5L10.5 18H8l2.75-4L8 10h2.5l1.5 2.5L13.5 10H16l-2.75 4L16 18zM13 9V3.5L18.5 9H13z"/></svg>
       Export Excel
     </button>
+
+    <button class="export-btn print-btn" id="printSummaryBtn" type="button">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
+      พิมพ์สลิปสรุป
+    </button>
   </section>
 
 </main>
@@ -360,8 +377,11 @@
   <div class="loading-spinner"></div>
 </div>
 
+<!-- ตัวสลิปสำหรับพิมพ์ 57 mm (ถูกเติมเนื้อหาด้วย JS ตอนกดพิมพ์) -->
+<div id="printSlip" aria-hidden="true"></div>
+
 <script src="config.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- xlsx โหลดแบบ lazy ใน app.js เฉพาะตอนกด Export Excel -->
 <script src="app.js"></script>
 </body>
 </html>

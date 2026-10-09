@@ -1,0 +1,138 @@
+/* =====================================================================
+   วาว Print Center — ปุ่มพิมพ์ + ฟอร์มสลิป 57 mm (เครื่องพิมพ์ใบเสร็จความร้อน)
+   ปรับได้ที่ตัวแปรด้านล่าง:
+     --slip-width : ความกว้างกระดาษ
+     --slip-pad   : ขอบซ้าย-ขวา (เครื่อง 58mm ส่วนใหญ่พิมพ์ได้จริง ~48mm
+                    ถ้าตัวหนังสือขอบขาด ให้เพิ่มค่านี้ เช่น 4.5mm)
+   ===================================================================== */
+
+:root {
+  --slip-width: 57mm;
+  --slip-pad: 4mm;
+  --slip-font: 'Noto Sans Thai', 'Sarabun', Tahoma, 'Leelawadee UI', sans-serif;
+}
+
+/* ---------- ปุ่มพิมพ์ (บนหน้าจอ) ---------- */
+.print-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.print-btn svg { flex: none; }
+
+/* ---------- ตัวสลิป: ซ่อนบนหน้าจอ (วางนอกจอไว้เพื่อวัดความสูง) ---------- */
+#printSlip {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: var(--slip-width);
+  box-sizing: border-box;
+  padding: 3mm var(--slip-pad) 8mm;
+  background: #fff;
+  color: #000;
+  font-family: var(--slip-font);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+#printSlip * { box-sizing: border-box; color: #000; }
+
+#printSlip .slip-logo { display: block; width: 100%; height: auto; margin: 0 auto 2mm; }
+
+#printSlip .slip-title {
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+  margin: 1mm 0 0;
+}
+#printSlip .slip-period {
+  text-align: center;
+  font-size: 11px;
+  margin: 0.5mm 0 0;
+}
+#printSlip .slip-period b { font-weight: 700; }
+
+#printSlip .slip-hr {
+  border: 0;
+  border-top: 1px dashed #000;
+  margin: 2.2mm 0;
+}
+#printSlip .slip-hr--solid { border-top-style: solid; border-top-width: 1.5px; }
+
+/* แถบหัวข้อส่วน: พื้นดำ ตัวหนังสือขาว */
+#printSlip .slip-section {
+  background: #000;
+  color: #fff !important;
+  text-align: center;
+  font-weight: 700;
+  font-size: 11.5px;
+  padding: 0.6mm 0;
+  margin: 2mm 0 1.2mm;
+  border-radius: 1px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+#printSlip .slip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2mm;
+  padding: 0.5mm 0;
+}
+#printSlip .slip-name { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+#printSlip .slip-qty  { font-size: 9.5px; }
+#printSlip .slip-amt  { flex: none; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+#printSlip .slip-sub  { font-size: 9.5px; padding: 0 0 0.8mm 2mm; }
+#printSlip .slip-sub + .slip-row,
+#printSlip .slip-entry + .slip-entry { border-top: 1px dotted #000; }
+
+#printSlip .slip-total {
+  font-weight: 800;
+  font-size: 12px;
+  border-top: 1px solid #000;
+  margin-top: 1mm;
+  padding-top: 1mm;
+}
+#printSlip .slip-grand {
+  font-weight: 800;
+  font-size: 14px;
+  border-top: 1.5px solid #000;
+  border-bottom: 1.5px solid #000;
+  padding: 1mm 0;
+  margin: 1.2mm 0;
+}
+#printSlip .slip-empty { text-align: center; font-size: 10px; padding: 1mm 0; }
+
+#printSlip .slip-foot {
+  text-align: center;
+  font-size: 9.5px;
+  margin-top: 2mm;
+}
+#printSlip .slip-foot--brand { font-weight: 700; }
+
+/* ---------- ตอนสั่งพิมพ์ ---------- */
+@page { margin: 0; }   /* ขนาดหน้า (57mm × ตามความยาวเนื้อหา) ถูกกำหนดจาก JS ก่อนสั่งพิมพ์ */
+
+@media print {
+  html, body {
+    width: var(--slip-width) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  /* ซ่อนทุกอย่างในแอป เหลือแต่สลิป */
+  body > *:not(#printSlip) { display: none !important; }
+
+  #printSlip {
+    position: static !important;
+    left: auto !important;
+    display: block !important;
+    width: var(--slip-width) !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

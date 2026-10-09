@@ -113,26 +113,110 @@ const els = {
 let activeModalType = 'income';
 
 // ===================== API LAYER =====================
-async function apiGet(params) {
-  const url = new URL(CONFIG.API_URL);
-  Object.keys(params).forEach(k => url.searchParams.set(k, params[k]));
-  const res = await fetch(url.toString(), { method: 'GET' });
-  if (!res.ok) throw new Error('เครือข่ายขัดข้อง (' + res.status + ')');
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-  return data;
+// - ทุกคำขอมี timeout และ retry อัตโนมัติ (เครือข่ายบ้าน/ISP ที่ไม่เสถียรจะไม่ทำให้ต้องกด F5 ซ้ำ ๆ)
+// - คำขอบันทึก (addEntry) แนบ requestId เดียวกันทุกครั้งที่ retry ฝั่ง Code.gs จะกันบันทึกซ้ำให้
+const API_TIMEOUT_MS = 12000;   // รอแต่ละรอบ (บวกเพิ่มรอบละ 4 วินาที)
+const API_TRIES = 3;
+
+function sleep_(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function newRequestId_() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
-async function apiPost(body) {
-  const res = await fetch(CONFIG.API_URL, {
+async function requestJson_(url, opts, tries) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS + i * 4000);
+    try {
+      const res = await fetch(url, Object.assign({}, opts, { signal: ctrl.signal }));
+      if (!res.ok) throw new Error('เครือข่ายขัดข้อง (' + res.status + ')');
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); }
+      catch (_) { throw new Error('เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ'); } // เช่น Apps Script ส่งหน้า HTML/login กลับมา
+      clearTimeout(timer);
+      if (!data.success) {
+        const e = new Error(data.error || 'เกิดข้อผิดพลาด');
+        e.fatal = true; // error ทางธุรกิจ ไม่ต้อง retry
+        throw e;
+      }
+      return data;
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.fatal) throw err;
+      if (err.name === 'AbortError') lastErr = new Error('เชื่อมต่อช้าเกินไป (หมดเวลา)');
+      else if (err instanceof TypeError) lastErr = new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+      else lastErr = err;
+      if (i < tries - 1) {
+        setSyncStatus('syncing', 'ลองเชื่อมต่อใหม่ (' + (i + 2) + '/' + tries + ')…');
+        await sleep_(600 * (i + 1));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+function apiGet(params) {
+  const url = new URL(CONFIG.API_URL);
+  Object.keys(params).forEach(k => url.searchParams.set(k, params[k]));
+  return requestJson_(url.toString(), { method: 'GET' }, API_TRIES);
+}
+
+function apiPost(body) {
+  if (body.action === 'addEntry' && !body.requestId) body.requestId = newRequestId_();
+  return requestJson_(CONFIG.API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // หลีกเลี่ยง CORS preflight กับ Apps Script
     body: JSON.stringify(body),
+  }, API_TRIES);
+}
+
+// ===================== LOCAL CACHE (เปิดแอปแล้วเห็นข้อมูลทันที) =====================
+const LS_KEYS = { items: 'waow.items.v1', summary: 'waow.summary.v1', transfer: 'waow.transfer.v1' };
+
+function lsGet_(key) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (_) { return null; }
+}
+function lsSet_(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (_) { /* เต็ม/ถูกปิด — ข้ามได้ */ }
+}
+
+function saveItemsCache_() {
+  lsSet_(LS_KEYS.items, {
+    incomeItems: state.incomeItems,
+    incomeItemUnits: state.incomeItemUnits,
+    expenseItems: state.expenseItems,
   });
-  if (!res.ok) throw new Error('เครือข่ายขัดข้อง (' + res.status + ')');
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-  return data;
+}
+
+// ใส่รายการสินค้าเข้า state แล้ววาดแถวใหม่ (ข้ามถ้าไม่มีอะไรเปลี่ยน เพื่อไม่ให้ช่องที่กำลังพิมพ์หลุดโฟกัส)
+function applyItems_(d) {
+  const incomeItems = d.incomeItems || [];
+  const incomeItemUnits = d.incomeItemUnits || {};
+  const expenseItems = d.expenseItems || [];
+  const sig = JSON.stringify([incomeItems, incomeItemUnits, expenseItems]);
+  if (state._itemsSig === sig) return;
+  state._itemsSig = sig;
+
+  state.incomeItems = incomeItems;
+  state.incomeItemUnits = incomeItemUnits;
+  state.expenseItems = expenseItems;
+
+  // แถวที่เลือกรายการไว้แต่ไม่มีในรายการแล้ว (หรือยังว่างเพราะโหลดไม่ทัน) ให้ตั้งเป็นรายการแรก
+  state.incomeRows.forEach(r => {
+    if (incomeItems.indexOf(r.name) === -1) {
+      r.name = incomeItems[0] || '';
+      r.unit = incomeItemUnits[r.name] || r.unit || 'แผ่น';
+    }
+  });
+  state.expenseRows.forEach(r => {
+    if (expenseItems.indexOf(r.name) === -1) r.name = expenseItems[0] || '';
+  });
+  renderIncomeRows();
+  renderExpenseRows();
 }
 
 // ===================== UI HELPERS =====================
@@ -522,6 +606,8 @@ els.addNewItemBtn.addEventListener('click', async () => {
     }
     els.newItemInput.value = '';
     renderExistingItemList();
+    state._itemsSig = null;
+    saveItemsCache_();
     showToast('เพิ่มรายการเรียบร้อย', 'success');
   } catch (err) {
     showToast('เพิ่มรายการไม่สำเร็จ: ' + err.message, 'error');
@@ -589,21 +675,29 @@ function formatDateLocal_(d) {
 
 els.applyFilterBtn.addEventListener('click', () => loadSummary());
 
-async function loadSummary() {
+function summaryKey_(r) { return r.from + '|' + r.to; }
+
+function applySummary_(data, range) {
+  state.lastSummary = data;
+  renderSummary(data);
+  lsSet_(LS_KEYS.summary, { key: summaryKey_(range), data: data });
+}
+
+async function loadSummary(opts) {
   if (!isConfigured()) return showToast('ยังไม่ได้ตั้งค่า API_URL ใน config.js', 'error');
 
-  const { from, to } = getDateRangeForSummary();
-  setLoading(true);
+  const silent = !!(opts && opts.silent);
+  const range = getDateRangeForSummary();
+  if (!silent) setLoading(true);
   try {
-    const data = await apiGet({ action: 'getSummary', from, to });
-    state.lastSummary = data;
-    renderSummary(data);
+    const data = await apiGet({ action: 'getSummary', from: range.from, to: range.to });
+    applySummary_(data, range);
     setSyncStatus('synced', 'ข้อมูลล่าสุด');
   } catch (err) {
     showToast('โหลดสรุปไม่สำเร็จ: ' + err.message, 'error');
     setSyncStatus('error', 'ซิงค์ล้มเหลว');
   } finally {
-    setLoading(false);
+    if (!silent) setLoading(false);
   }
 }
 
@@ -671,19 +765,25 @@ function getDateRangeForTransferSummary() {
 
 els.transferApplyFilterBtn.addEventListener('click', () => loadTransferSummary());
 
-async function loadTransferSummary() {
+function applyTransferSummary_(data, range) {
+  state.lastTransferSummary = data;
+  renderTransferSummary(data);
+  lsSet_(LS_KEYS.transfer, { key: summaryKey_(range), data: data });
+}
+
+async function loadTransferSummary(opts) {
   if (!isConfigured()) return;
 
-  const { from, to } = getDateRangeForTransferSummary();
-  setLoading(true);
+  const silent = !!(opts && opts.silent);
+  const range = getDateRangeForTransferSummary();
+  if (!silent) setLoading(true);
   try {
-    const data = await apiGet({ action: 'getTransferSummary', from, to });
-    state.lastTransferSummary = data;
-    renderTransferSummary(data);
+    const data = await apiGet({ action: 'getTransferSummary', from: range.from, to: range.to });
+    applyTransferSummary_(data, range);
   } catch (err) {
     showToast('โหลดสรุปโอนเงินไม่สำเร็จ: ' + err.message, 'error');
   } finally {
-    setLoading(false);
+    if (!silent) setLoading(false);
   }
 }
 
@@ -703,12 +803,28 @@ function renderTransferSummary(data) {
 }
 
 // ===================== EXPORT EXCEL =====================
-els.exportExcelBtn.addEventListener('click', () => {
+// โหลดไลบรารี xlsx เฉพาะตอนกด Export (เดิมโหลดทุกครั้งที่เปิดแอป ~900KB และบล็อกการเริ่มทำงาน)
+function loadXlsx_() {
+  if (window.XLSX) return Promise.resolve();
+  if (loadXlsx_._p) return loadXlsx_._p;
+  loadXlsx_._p = new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = resolve;
+    sc.onerror = () => { loadXlsx_._p = null; reject(new Error('โหลดตัวสร้างไฟล์ Excel ไม่สำเร็จ ลองใหม่อีกครั้ง')); };
+    document.head.appendChild(sc);
+  });
+  return loadXlsx_._p;
+}
+
+els.exportExcelBtn.addEventListener('click', async () => {
   if (!state.lastSummary) {
     showToast('กรุณากดแสดงสรุปก่อน', 'error');
     return;
   }
   try {
+    showToast('กำลังเตรียมไฟล์ Excel…');
+    await loadXlsx_();
     exportSummaryToExcel(state.lastSummary);
     showToast('ดาวน์โหลดไฟล์ Excel แล้ว', 'success');
   } catch (err) {
@@ -786,70 +902,335 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// ===================== พิมพ์สลิป 57 mm (หน้าโอนเงิน + หน้าสรุป) =====================
+// สร้าง HTML ของสลิปใน #printSlip → วัดความสูงจริง → ตั้งขนาดหน้า 57mm × ความยาวตามเนื้อหา → window.print()
+const SLIP_LOGO_SRC = 'icons/logo-slip.png';
+const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const TH_MONTHS_FULL = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+function fmtNum_(n) {
+  return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function parseYmd_(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd || '');
+  return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+}
+
+function thDate_(ymd, withYear) {
+  const p = parseYmd_(ymd);
+  if (!p) return ymd || '';
+  return p.d + ' ' + TH_MONTHS_SHORT[p.m - 1] + (withYear === false ? '' : ' ' + (p.y + 543));
+}
+
+function daysBetween_(from, to) {
+  const a = parseYmd_(from), b = parseYmd_(to);
+  if (!a || !b) return 0;
+  return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000);
+}
+
+// ดูจาก from/to ของข้อมูลที่แสดงอยู่จริง (ไม่ใช่แท็บที่เพิ่งกดเปลี่ยน) ว่าเป็นช่วงแบบไหน
+function describeRange_(from, to) {
+  const a = parseYmd_(from), b = parseYmd_(to);
+  if (!a || !b) return { mode: 'custom', kind: 'ช่วงวันที่', text: (from || '') + ' – ' + (to || '') };
+  if (from === to) return { mode: 'day', kind: 'รายวัน', text: thDate_(from) };
+  const lastDay = new Date(a.y, a.m, 0).getDate();
+  if (a.y === b.y && a.m === b.m && a.d === 1 && b.d === lastDay) {
+    return { mode: 'month', kind: 'รายเดือน', text: TH_MONTHS_FULL[a.m - 1] + ' ' + (a.y + 543) };
+  }
+  if (a.y === b.y && a.m === 1 && a.d === 1 && b.m === 12 && b.d === 31) {
+    return { mode: 'year', kind: 'รายปี', text: 'พ.ศ. ' + (a.y + 543) };
+  }
+  return { mode: 'custom', kind: 'ช่วงวันที่', text: thDate_(from) + ' – ' + thDate_(to) };
+}
+
+function slipHeaderHtml_(title, range) {
+  return `
+    <img class="slip-logo" src="${SLIP_LOGO_SRC}" alt="วาว Print Center">
+    <div class="slip-title">${escapeHtml(title)}</div>
+    <div class="slip-period"><b>${escapeHtml(range.kind)}</b> ${escapeHtml(range.text)}</div>
+    <hr class="slip-hr">`;
+}
+
+function slipFooterHtml_() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  return `
+    <hr class="slip-hr">
+    <div class="slip-foot">พิมพ์เมื่อ ${escapeHtml(thDate_(formatDateLocal_(now)))} ${hh} น.</div>
+    <div class="slip-foot slip-foot--brand">วาว Print Center</div>`;
+}
+
+function slipRow_(name, amountText, qtyText) {
+  return `
+    <div class="slip-row">
+      <span class="slip-name">${escapeHtml(name)}${qtyText ? ` <span class="slip-qty">(${escapeHtml(qtyText)})</span>` : ''}</span>
+      <span class="slip-amt">${escapeHtml(amountText)}</span>
+    </div>`;
+}
+
+function buildSummarySlip_(d) {
+  const range = describeRange_(d.from, d.to);
+  const incomeEntries = Object.entries(d.incomeByItem || {});
+  const expenseEntries = Object.entries(d.expenseByItem || {});
+
+  let html = slipHeaderHtml_('สรุปรายรับ-รายจ่าย', range);
+
+  html += '<div class="slip-section">รายรับ</div>';
+  html += incomeEntries.length
+    ? incomeEntries.map(([name, v]) => slipRow_(name, fmtNum_(v.total), v.qty ? v.qty + ' ' + (v.unit || 'แผ่น') : '')).join('')
+    : '<div class="slip-empty">ไม่มีรายการ</div>';
+  html += `<div class="slip-row slip-total"><span>รวมรายรับ</span><span class="slip-amt">${fmtNum_(d.incomeTotal)}</span></div>`;
+
+  html += '<div class="slip-section">รายจ่าย</div>';
+  html += expenseEntries.length
+    ? expenseEntries.map(([name, v]) => slipRow_(name, fmtNum_(v.total), '')).join('')
+    : '<div class="slip-empty">ไม่มีรายการ</div>';
+  html += `<div class="slip-row slip-total"><span>รวมรายจ่าย</span><span class="slip-amt">${fmtNum_(d.expenseTotal)}</span></div>`;
+
+  // กำไรสุทธิ: พิมพ์เฉพาะเมื่อการ์ด "กำไรสุทธิ" ถูกแสดงบนหน้าจอ (ถ้าซ่อนไว้ ก็ไม่พิมพ์)
+  if (!els.summaryProfitCard.classList.contains('is-hidden')) {
+    html += `<div class="slip-row slip-grand"><span>กำไรสุทธิ</span><span class="slip-amt">${fmtNum_(d.profit)}</span></div>`;
+  }
+
+  return html + slipFooterHtml_();
+}
+
+// จัดกลุ่มรายการโอน: รายวัน = ทีละรายการ | รายปี/ช่วงยาว = รายเดือน | อื่น ๆ = รายวัน
+function groupTransfers_(entries, range, from, to) {
+  if (range.mode === 'day') {
+    return entries.map(e => ({
+      label: (formatTimeForExport_(e.time) || '-') + ' น.',
+      amount: Number(e.amount) || 0, fee: Number(e.fee) || 0, qty: Number(e.qty) || 0,
+    }));
+  }
+  const byMonth = range.mode === 'year' || daysBetween_(from, to) > 62;
+  const groups = new Map();
+  entries.forEach(e => {
+    const p = parseYmd_(e.date);
+    if (!p) return;
+    const key = byMonth ? p.y + '-' + String(p.m).padStart(2, '0') : e.date;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        label: byMonth ? TH_MONTHS_FULL[p.m - 1] + ' ' + (p.y + 543) : thDate_(e.date, false),
+        amount: 0, fee: 0, qty: 0,
+      });
+    }
+    const g = groups.get(key);
+    g.amount += Number(e.amount) || 0;
+    g.fee += Number(e.fee) || 0;
+    g.qty += Number(e.qty) || 0;
+  });
+  return Array.from(groups.keys()).sort().map(k => groups.get(k));
+}
+
+function buildTransferSlip_(d) {
+  const range = describeRange_(d.from, d.to);
+  const entries = d.entries || [];
+
+  let html = slipHeaderHtml_('สรุปบริการโอนเงิน', range);
+
+  html += `<div class="slip-row"><span>จำนวนรายการ</span><span class="slip-amt">${(Number(d.qtyTotal) || 0).toLocaleString('en-US')}</span></div>`;
+  html += `<div class="slip-row"><span>ยอดโอนรวม</span><span class="slip-amt">${fmtNum_(d.amountTotal)}</span></div>`;
+  html += `<div class="slip-row"><span>ค่าบริการรวม</span><span class="slip-amt">${fmtNum_(d.feeTotal)}</span></div>`;
+  html += `<div class="slip-row slip-grand"><span>รวมเงินสดที่รับ</span><span class="slip-amt">${fmtNum_(d.cashTotal)}</span></div>`;
+
+  html += '<div class="slip-section">รายละเอียด</div>';
+  const rows = groupTransfers_(entries, range, d.from, d.to);
+  html += rows.length
+    ? rows.map(r => `
+        <div class="slip-entry">
+          <div class="slip-row"><span class="slip-name">${escapeHtml(r.label)}</span><span class="slip-amt">โอน ${fmtNum_(r.amount)}</span></div>
+          <div class="slip-sub">ค่าบริการ ${fmtNum_(r.fee)} · ${r.qty.toLocaleString('en-US')} รายการ</div>
+        </div>`).join('')
+    : '<div class="slip-empty">ไม่มีรายการ</div>';
+
+  return html + slipFooterHtml_();
+}
+
+function waitSlipImages_(root) {
+  const imgs = Array.from(root.querySelectorAll('img'));
+  return Promise.all(imgs.map(img => (img.complete && img.naturalWidth > 0) ? Promise.resolve() : new Promise(resolve => {
+    img.onload = img.onerror = resolve;
+    setTimeout(resolve, 4000); // ไม่รอเกิน 4 วินาที
+  })));
+}
+
+async function printSlip_(html) {
+  const slip = document.getElementById('printSlip');
+  slip.innerHTML = html;
+  await waitSlipImages_(slip);
+  try { if (document.fonts && document.fonts.ready) await Promise.race([document.fonts.ready, sleep_(1500)]); } catch (_) {}
+
+  // ความยาวสลิป = ความสูงเนื้อหาจริง (px → mm) + เผื่อเล็กน้อย
+  const heightMm = Math.ceil(slip.offsetHeight * 25.4 / 96) + 2;
+  document.getElementById('slipPageStyle').textContent = '@page { size: 57mm ' + heightMm + 'mm; margin: 0; }';
+  window.print();
+}
+
+function bindPrintButton_(btnId, getData, build, emptyMsg) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const data = getData();
+    if (!data) return showToast(emptyMsg, 'error');
+    btn.disabled = true;
+    try {
+      await printSlip_(build(data));
+    } catch (err) {
+      showToast('พิมพ์ไม่สำเร็จ: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+bindPrintButton_('printSummaryBtn', () => state.lastSummary, buildSummarySlip_, 'กรุณากดแสดงสรุปก่อนพิมพ์');
+bindPrintButton_('printTransferBtn', () => state.lastTransferSummary, buildTransferSlip_, 'กรุณากดแสดงสรุปก่อนพิมพ์');
+
 // ===================== REFRESH / INIT =====================
 els.refreshBtn.addEventListener('click', () => loadAllData());
 
-async function loadAllData() {
+let lastSyncAt = 0;
+let loadAllBusy = false;
+let filtersInitialized = false;
+
+function initDefaultFilters_() {
+  if (filtersInitialized) return;
+  filtersInitialized = true;
+  const now = new Date();
+  const todayStr = formatDateLocal_(now);
+  const monthStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+  els.filterDaySingle.value = todayStr;
+  els.filterMonth.value = monthStr;
+  els.filterYear.value = now.getFullYear();
+  els.filterFrom.value = todayStr;
+  els.filterTo.value = todayStr;
+
+  els.transferFilterDaySingle.value = todayStr;
+  els.transferFilterMonth.value = monthStr;
+  els.transferFilterYear.value = now.getFullYear();
+  els.transferFilterFrom.value = todayStr;
+  els.transferFilterTo.value = todayStr;
+}
+
+function ensureEntryRows_() {
+  if (state.incomeRows.length === 0) addIncomeRow(); else renderIncomeRows();
+  if (state.expenseRows.length === 0) addExpenseRow(); else renderExpenseRows();
+  if (state.transferRows.length === 0) addTransferRow(); else renderTransferRows();
+}
+
+// แสดงข้อมูลที่เก็บไว้จากครั้งก่อนทันที (ไม่ต้องรอเครือข่าย)
+function paintFromCache_() {
+  const cachedItems = lsGet_(LS_KEYS.items);
+  if (cachedItems) applyItems_(cachedItems);
+  ensureEntryRows_();
+
+  const sr = getDateRangeForSummary();
+  const cs = lsGet_(LS_KEYS.summary);
+  if (cs && cs.key === summaryKey_(sr)) { state.lastSummary = cs.data; renderSummary(cs.data); }
+
+  const tr = getDateRangeForTransferSummary();
+  const ct = lsGet_(LS_KEYS.transfer);
+  if (ct && ct.key === summaryKey_(tr)) { state.lastTransferSummary = ct.data; renderTransferSummary(ct.data); }
+
+  return !!cachedItems;
+}
+
+async function loadAllData(opts) {
   if (!isConfigured()) {
     setSyncStatus('error', 'ยังไม่ได้ตั้งค่า API');
     showToast('กรุณาตั้งค่า API_URL ใน config.js ก่อนใช้งาน', 'error');
     return;
   }
+  if (loadAllBusy) return;
+  loadAllBusy = true;
 
-  setSyncStatus('syncing', 'กำลังซิงค์ข้อมูล…');
-  setLoading(true);
+  const background = !!(opts && opts.background);
+  let hasCache = state.incomeItems.length > 0;
+  if (!filtersInitialized) {
+    initDefaultFilters_();
+    hasCache = paintFromCache_();
+  }
+
+  setSyncStatus('syncing', hasCache ? 'กำลังอัปเดตข้อมูล…' : 'กำลังโหลดข้อมูล…');
+  // ถ้ามีข้อมูลเก่าแสดงอยู่แล้ว ไม่ต้องบังหน้าจอ ใช้งานต่อได้เลยระหว่างซิงค์
+  const showOverlay = !hasCache && !background;
+  if (showOverlay) setLoading(true);
+
   try {
-    const [incomeItemsRes, expenseItemsRes] = await Promise.all([
-      apiGet({ action: 'getItems', type: 'income' }),
-      apiGet({ action: 'getItems', type: 'expense' }),
-    ]);
-    state.incomeItems = incomeItemsRes.items;
-    state.incomeItemUnits = incomeItemsRes.itemUnits || {};
-    state.expenseItems = expenseItemsRes.items;
+    const sr = getDateRangeForSummary();
+    const tr = getDateRangeForTransferSummary();
+    let init = null;
 
-    if (state.incomeRows.length === 0) addIncomeRow();
-    else renderIncomeRows();
+    // เรียกครั้งเดียวได้ทุกอย่าง (ต้องอัปเดต Code.gs ด้วย) — ถ้า Code.gs ยังเป็นรุ่นเก่า ให้ถอยกลับไปเรียกแบบเดิม
+    try {
+      init = await apiGet({ action: 'getInit', from: sr.from, to: sr.to, tfrom: tr.from, tto: tr.to });
+    } catch (err) {
+      if (!/ไม่รู้จัก action/.test(err.message)) throw err;
+    }
 
-    if (state.expenseRows.length === 0) addExpenseRow();
-    else renderExpenseRows();
+    if (init) {
+      applyItems_(init);
+      saveItemsCache_();
+      if (init.summary) applySummary_(init.summary, sr);
+      if (init.transferSummary) applyTransferSummary_(init.transferSummary, tr);
+    } else {
+      const [inc, exp] = await Promise.all([
+        apiGet({ action: 'getItems', type: 'income' }),
+        apiGet({ action: 'getItems', type: 'expense' }),
+      ]);
+      applyItems_({ incomeItems: inc.items, incomeItemUnits: inc.itemUnits, expenseItems: exp.items });
+      saveItemsCache_();
+      setLoading(false);
+      await Promise.all([loadSummary({ silent: true }), loadTransferSummary({ silent: true })]);
+    }
 
-    if (state.transferRows.length === 0) addTransferRow();
-    else renderTransferRows();
-
-    // ตั้งวันที่เริ่มต้นของหน้าสรุปเป็นวันนี้
-    const todayStr = formatDateLocal_(new Date());
-    els.filterDaySingle.value = todayStr;
-    const now = new Date();
-    els.filterMonth.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    els.filterYear.value = now.getFullYear();
-    els.filterFrom.value = todayStr;
-    els.filterTo.value = todayStr;
-
-    // ตั้งวันที่เริ่มต้นของสรุปหน้าโอนเงิน (แยกต่างหาก)
-    els.transferFilterDaySingle.value = todayStr;
-    els.transferFilterMonth.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    els.transferFilterYear.value = now.getFullYear();
-    els.transferFilterFrom.value = todayStr;
-    els.transferFilterTo.value = todayStr;
-
-    await loadSummary();
-    await loadTransferSummary();
-
+    lastSyncAt = Date.now();
     setSyncStatus('synced', 'ซิงค์ข้อมูลล่าสุดแล้ว');
   } catch (err) {
-    setSyncStatus('error', 'เชื่อมต่อไม่สำเร็จ');
-    showToast('โหลดข้อมูลไม่สำเร็จ: ' + err.message, 'error');
+    if (hasCache) {
+      setSyncStatus('error', 'ออฟไลน์ — ใช้ข้อมูลเดิม (แตะ ⟳ เพื่อลองใหม่)');
+    } else {
+      setSyncStatus('error', 'เชื่อมต่อไม่สำเร็จ (แตะ ⟳ เพื่อลองใหม่)');
+    }
+    if (!background) showToast('โหลดข้อมูลไม่สำเร็จ: ' + err.message, 'error');
   } finally {
+    loadAllBusy = false;
     setLoading(false);
   }
 }
 
+// กลับมาเปิดแอปจากพื้นหลัง (นานเกิน 5 นาที) หรือเน็ตกลับมา → ซิงค์เงียบ ๆ ให้เอง
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Date.now() - lastSyncAt > 5 * 60 * 1000) {
+    loadAllData({ background: true });
+  }
+});
+window.addEventListener('online', () => loadAllData({ background: true }));
+
 // ===================== SERVICE WORKER =====================
+function hasUnsavedInput_() {
+  return state.incomeRows.some(r => r.price || r.qty) ||
+         state.expenseRows.some(r => r.price) ||
+         state.transferRows.some(r => r.amount || r.fee);
+}
+
 if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => {
       // ไม่ critical หาก register ไม่สำเร็จ (เช่น เปิดผ่าน file://)
     });
+  });
+  // เมื่อ Service Worker เวอร์ชันใหม่เข้าควบคุม ให้รีโหลดเพื่อใช้โค้ดใหม่ (เฉพาะตอนไม่มีข้อมูลที่กรอกค้างอยู่)
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    if (hasUnsavedInput_()) return;
+    reloaded = true;
+    location.reload();
   });
 }
 
