@@ -1056,16 +1056,50 @@ function waitSlipImages_(root) {
   })));
 }
 
+// พิมพ์ผ่าน iframe ซ่อน: ในหน้านั้นมี "สลิปอย่างเดียว" ไม่ขึ้นกับโครงสร้างหน้าแอป
+// (วิธีเดิมสั่งซ่อนทุกอย่างยกเว้น #printSlip ถ้า #printSlip ไม่ได้อยู่ชั้นนอกสุดของ body จะซ่อนสลิปไปด้วย = พรีวิวว่าง)
 async function printSlip_(html) {
-  const slip = document.getElementById('printSlip');
-  slip.innerHTML = html;
+  const abs = (p) => new URL(p, location.href).href;
+
+  // เอา <link> ฟอนต์ Google จากหน้าหลักไปใช้ด้วย เพื่อให้ตัวอักษรเหมือนบนจอ
+  const fontLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+    .filter(l => /fonts\.googleapis\.com/.test(l.href))
+    .map(l => `<link rel="stylesheet" href="${l.href}">`).join('');
+
+  const old = document.getElementById('slipFrame');
+  if (old) old.remove();
+
+  const frame = document.createElement('iframe');
+  frame.id = 'slipFrame';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:57mm;height:10px;border:0;opacity:0;pointer-events:none;';
+  frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8">' + fontLinks +
+    '<link rel="stylesheet" href="' + abs('print.css?v=4') + '">' +
+    '<style id="pageStyle">@page { size: 57mm 200mm; margin: 0; }</style></head>' +
+    '<body><div id="printSlip">' + html.replace(/src="icons\//g, 'src="' + abs('icons/')) + '</div></body></html>';
+
+  await new Promise((resolve, reject) => {
+    frame.onload = resolve;
+    frame.onerror = reject;
+    document.body.appendChild(frame);
+  });
+
+  const win = frame.contentWindow;
+  const doc = frame.contentDocument;
+  const slip = doc.getElementById('printSlip');
+
   await waitSlipImages_(slip);
-  try { if (document.fonts && document.fonts.ready) await Promise.race([document.fonts.ready, sleep_(1500)]); } catch (_) {}
+  try { if (doc.fonts && doc.fonts.ready) await Promise.race([doc.fonts.ready, sleep_(1500)]); } catch (_) {}
+  await sleep_(150); // ให้ stylesheet เลย์เอาต์เสร็จก่อนวัดความสูง
 
   // ความยาวสลิป = ความสูงเนื้อหาจริง (px → mm) + เผื่อเล็กน้อย
   const heightMm = Math.ceil(slip.offsetHeight * 25.4 / 96) + 2;
-  document.getElementById('slipPageStyle').textContent = '@page { size: 57mm ' + heightMm + 'mm; margin: 0; }';
-  window.print();
+  doc.getElementById('pageStyle').textContent = '@page { size: 57mm ' + heightMm + 'mm; margin: 0; }';
+
+  const cleanup = () => setTimeout(() => frame.remove(), 500);
+  win.addEventListener('afterprint', cleanup);
+  win.focus();
+  win.print();
 }
 
 function bindPrintButton_(btnId, getData, build, emptyMsg) {
