@@ -6,6 +6,6 @@
  * 2. นำ URL ที่ได้ (ลงท้ายด้วย /exec) มาวางแทนค่าด้านล่างนี้
  */
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycby_t3gFm6Rqcmnu4_ZGAKMnib-a82yZrvtQVQ2LPSqnj-BrMHSRl5IwDIFABtiq0TW2/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbzeaH7LDEDUwIrIINfGMrG7rx_LmrGK2G9Mld_jHLgiRR46MdaszQoVMx1fQhb4U7GP/exec',
   STORE_NAME: 'วาว Print Center',
 };
