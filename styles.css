@@ -831,11 +831,7 @@ body::before {
   overflow-y: auto;
 }
 
-.modal-item-unit {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  margin-left: 6px;
-}
+.modal-item-row {
   padding: 10px 4px;
   font-size: 13.5px;
   color: var(--color-text);
@@ -843,6 +839,12 @@ body::before {
 }
 
 .modal-item-row:last-child { border-bottom: none; }
+
+.modal-item-unit {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-left: 6px;
+}
 
 /* =====================================================
    LOADING OVERLAY

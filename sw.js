@@ -1,12 +1,12 @@
 /**
- * วาว Print Center — Service Worker (v4)
+ * วาว Print Center — Service Worker (v5)
  * - เปิดแอปได้ทันทีจาก cache แม้เน็ตช้า/หลุด (ข้อมูลยังซิงค์ผ่าน API ตามปกติ)
  * - cache ฟอนต์ Google และ xlsx จาก CDN ด้วย ไม่ต้องโหลดใหม่ทุกครั้ง
  * - ไม่ยุ่งกับคำขอไป Google Apps Script (ให้เบราว์เซอร์จัดการเอง แอปมี timeout/retry ของตัวเอง)
  *
- * ทุกครั้งที่แก้ไฟล์ของแอป ให้เปลี่ยนเลขเวอร์ชันด้านล่าง (v4 → v5 → ...)
+ * ทุกครั้งที่แก้ไฟล์ของแอป ให้เปลี่ยนเลขเวอร์ชันด้านล่าง (v5 → v6 → ...)
  */
-const CACHE_NAME = 'waow-print-center-v4';
+const CACHE_NAME = 'waow-print-center-v5';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
