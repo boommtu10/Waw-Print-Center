@@ -8,7 +8,7 @@ const state = {
   incomeItems: [],
   incomeItemUnits: {}, // { ชื่อรายการ: 'แผ่น'|'คน' }
   expenseItems: [],
-  incomeRows: [],   // [{rowId, name, qty, unit, price}]
+  incomeRows: [],   // [{rowId, name, qty, unit, price}]  (price = ราคาต่อหน่วย)
   expenseRows: [],  // [{rowId, name, price}]
   transferRows: [], // [{rowId, amount, qty, fee}]
   summaryRange: 'day',
@@ -265,6 +265,28 @@ els.bottomNav.addEventListener('click', (e) => {
 });
 
 // ===================== ENTRY ROWS: รายรับ =====================
+// ช่อง "ราคา" ในแถวรายรับ = ราคาต่อหน่วย  → ราคารวมของแถว = จำนวน × ราคาต่อหน่วย
+// ถ้าไม่กรอกจำนวน ถือว่าเป็น 1 (เช่น ขนส่ง / จ่ายบิล Net ที่มีแค่ราคา)
+// ตอนบันทึก ส่ง "ราคารวมของแถว" ไปเก็บในคอลัมน์ ราคา ของชีตเหมือนเดิม (ข้อมูลเก่ากับหน้าสรุปจึงใช้ต่อได้)
+function roundMoney_(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function incomeRowQty_(row) {
+  const q = Number(row.qty);
+  return q > 0 ? q : 1;
+}
+
+function incomeLineTotal_(row) {
+  return roundMoney_(incomeRowQty_(row) * (Number(row.price) || 0));
+}
+
+function incomeLineText_(row) {
+  const unitPrice = Number(row.price) || 0;
+  if (unitPrice <= 0) return '';
+  return incomeRowQty_(row) + ' ' + (row.unit || 'แผ่น') + ' × ' + formatBaht(unitPrice) + ' = ' + formatBaht(incomeLineTotal_(row));
+}
+
 function addIncomeRow(prefill) {
   const row = {
     rowId: nextRowId_(),
@@ -286,7 +308,7 @@ function removeIncomeRow(rowId) {
 function renderIncomeRows() {
   const labelsHtml = `
     <div class="entry-col-labels">
-      <span>รายการ</span><span>จำนวน</span><span>หน่วย</span><span>ราคา</span><span></span>
+      <span>รายการ</span><span>จำนวน</span><span>หน่วย</span><span>ราคา/หน่วย</span><span></span>
     </div>`;
 
   const rowsHtml = state.incomeRows.map(row => `
@@ -294,7 +316,7 @@ function renderIncomeRows() {
       <select class="entry-select" data-field="name" data-row-id="${row.rowId}">
         ${state.incomeItems.map(item => `<option value="${escapeHtml(item)}" ${item === row.name ? 'selected' : ''}>${escapeHtml(item)}</option>`).join('')}
       </select>
-      <input class="entry-input entry-input--number" type="number" inputmode="numeric" min="0" placeholder="0" data-field="qty" data-row-id="${row.rowId}" value="${row.qty}">
+      <input class="entry-input entry-input--number" type="number" inputmode="numeric" min="0" placeholder="1" data-field="qty" data-row-id="${row.rowId}" value="${row.qty}">
       <select class="entry-select entry-select--unit" data-field="unit" data-row-id="${row.rowId}">
         <option value="แผ่น" ${row.unit === 'แผ่น' ? 'selected' : ''}>แผ่น</option>
         <option value="คน" ${row.unit === 'คน' ? 'selected' : ''}>คน</option>
@@ -303,6 +325,7 @@ function renderIncomeRows() {
       <button class="entry-row-remove" type="button" data-remove-row="${row.rowId}" aria-label="ลบแถวนี้">
         <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       </button>
+      <div class="entry-line-total">${escapeHtml(incomeLineText_(row))}</div>
     </div>
   `).join('');
 
@@ -311,8 +334,8 @@ function renderIncomeRows() {
 }
 
 function updateIncomeTotal() {
-  const total = state.incomeRows.reduce((sum, r) => sum + (Number(r.price) || 0), 0);
-  els.incomeTotal.textContent = formatBaht(total);
+  const total = state.incomeRows.reduce((sum, r) => sum + incomeLineTotal_(r), 0);
+  els.incomeTotal.textContent = formatBaht(roundMoney_(total));
 }
 
 els.incomeEntryList.addEventListener('input', (e) => {
@@ -332,7 +355,10 @@ els.incomeEntryList.addEventListener('input', (e) => {
       if (unitSel) unitSel.value = autoUnit;
     }
   }
-  if (field === 'price') updateIncomeTotal();
+  // อัปเดตบรรทัดผลคูณของแถวนี้ + ยอดรวม (ไม่วาดแถวใหม่ เพื่อไม่ให้ช่องที่กำลังพิมพ์หลุดโฟกัส)
+  const lineEl = e.target.closest('.entry-row').querySelector('.entry-line-total');
+  if (lineEl) lineEl.textContent = incomeLineText_(row);
+  updateIncomeTotal();
 });
 
 els.incomeEntryList.addEventListener('click', (e) => {
@@ -467,6 +493,7 @@ els.addTransferRowBtn.addEventListener('click', () => addTransferRow());
 els.saveIncomeBtn.addEventListener('click', async () => {
   if (!isConfigured()) return showToast('ยังไม่ได้ตั้งค่า API_URL ใน config.js', 'error');
 
+  // แถวที่ใช้ได้ = เลือกรายการแล้ว และมีราคาต่อหน่วย > 0
   const validRows = state.incomeRows.filter(r => r.name && Number(r.price) > 0);
   if (validRows.length === 0) {
     showToast('กรุณากรอกราคาอย่างน้อย 1 รายการ', 'error');
@@ -476,7 +503,12 @@ els.saveIncomeBtn.addEventListener('click', async () => {
   els.saveIncomeBtn.disabled = true;
   setLoading(true);
   try {
-    const items = validRows.map(r => ({ name: r.name, qty: Number(r.qty) || 0, price: Number(r.price) }));
+    // ส่ง qty = จำนวนจริง (ว่าง = 1) และ price = ราคารวมของแถว (จำนวน × ราคาต่อหน่วย)
+    const items = validRows.map(r => ({
+      name: r.name,
+      qty: incomeRowQty_(r),
+      price: incomeLineTotal_(r),
+    }));
     await apiPost({ action: 'addEntry', type: 'income', items, device: state.deviceName });
     showToast('บันทึกรายรับเรียบร้อย', 'success');
     state.incomeRows = [];
@@ -793,10 +825,11 @@ function renderTransferSummary(data) {
   els.transferCashSummaryTotal.textContent = formatBaht(data.cashTotal);
 
   const entries = data.entries || [];
+  // เวลาที่ได้จากชีตเป็นค่าวันที่ปี 1899 (เช่น 1899-12-30T00:44:56.000Z) ต้องแปลงเป็น "7:27" ก่อนแสดง
   els.transferDetailList.innerHTML = entries.length
     ? entries.map(e => `
         <div class="summary-detail-row">
-          <span class="summary-detail-name">${escapeHtml(e.date)} ${escapeHtml(e.time)}<span class="summary-detail-qty">(${e.qty} รายการ)</span></span>
+          <span class="summary-detail-name">${escapeHtml(formatDateForExport_(e.date))} ${escapeHtml(formatTimeForExport_(e.time))}<span class="summary-detail-qty">(${e.qty} รายการ)</span></span>
           <span class="summary-detail-amount">ยอด ${formatBaht(e.amount)} · ค่าบริการ ${formatBaht(e.fee)}</span>
         </div>`).join('')
     : '<p class="empty-hint">ยังไม่มีข้อมูลในช่วงที่เลือก</p>';

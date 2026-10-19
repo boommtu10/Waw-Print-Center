@@ -333,6 +333,20 @@ body::before {
   cursor: pointer;
 }
 
+/* บรรทัดผลคูณใต้แถวรายรับ เช่น "10 แผ่น × ฿2.00 = ฿20.00" (ว่างเมื่อยังไม่กรอกราคา) */
+.entry-line-total {
+  grid-column: 1 / -1;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-income);
+  padding-right: 36px;
+  margin-top: -2px;
+}
+
+.entry-line-total:empty { display: none; }
+
 .entry-row-remove {
   width: 28px;
   height: 28px;
